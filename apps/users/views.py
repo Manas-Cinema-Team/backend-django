@@ -1,14 +1,16 @@
 from django.contrib.auth import authenticate, get_user_model
 from django.db import IntegrityError
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .serializers import (
     LoginSerializer,
     LoginUserResponseSerializer,
+    RefreshTokenSerializer,
     UserRegistrationSerializer,
     UserResponseSerializer,
 )
@@ -37,6 +39,16 @@ def validation_error_response(details):
             'details': details,
         },
         status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+def invalid_refresh_token_response():
+    return Response(
+        {
+            'error': 'INVALID_REFRESH_TOKEN',
+            'message': 'Refresh token недействителен или истек.',
+        },
+        status=status.HTTP_401_UNAUTHORIZED,
     )
 
 
@@ -87,3 +99,41 @@ class LoginView(APIView):
             )
 
         return token_response(user, user_serializer_class=LoginUserResponseSerializer)
+
+
+class RefreshView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = RefreshTokenSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            refresh = RefreshToken(serializer.validated_data['refresh_token'])
+        except TokenError:
+            return invalid_refresh_token_response()
+
+        return Response(
+            {
+                'access_token': str(refresh.access_token),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = RefreshTokenSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            refresh = RefreshToken(serializer.validated_data['refresh_token'])
+            refresh.blacklist()
+        except TokenError:
+            return invalid_refresh_token_response()
+
+        return Response(status=status.HTTP_204_NO_CONTENT)

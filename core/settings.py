@@ -82,6 +82,7 @@ THIRD_PARTY_APPS = [
     'corsheaders',
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
 ]
 
 LOCAL_APPS: list[str] = [
@@ -130,7 +131,7 @@ def env_int(key: str, default: int) -> int:
 
     return int(value)
 
-DATABASE_ENGINE = env('DB_ENGINE', 'django.db.backends.sqlite3')
+DATABASE_ENGINE = env('DB_ENGINE', 'django.db.backends.postgresql')
 
 if DATABASE_ENGINE == 'django.db.backends.sqlite3':
     DATABASES = {
@@ -223,6 +224,7 @@ SIMPLE_JWT = {
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
     'SIGNING_KEY': SECRET_KEY,
+    'BLACKLIST_AFTER_ROTATION': True,
 }
 
 LOGGING = {
