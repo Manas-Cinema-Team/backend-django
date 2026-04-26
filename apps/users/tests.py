@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APITestCase
+from rest_framework_simplejwt.tokens import RefreshToken
 
 User = get_user_model()
 
@@ -65,3 +66,40 @@ class AuthApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertEqual(response.data['error'], 'INVALID_CREDENTIALS')
+
+    def test_refresh_returns_new_access_token(self):
+        user = User.objects.create_user(email='user@example.com', password='strongpass123')
+        refresh = RefreshToken.for_user(user)
+
+        response = self.client.post(
+            '/api/v1/auth/refresh',
+            {'refresh_token': str(refresh)},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('access_token', response.data)
+        self.assertNotIn('refresh_token', response.data)
+
+    def test_logout_blacklists_refresh_token(self):
+        user = User.objects.create_user(email='user@example.com', password='strongpass123')
+        refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
+
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+        response = self.client.post(
+            '/api/v1/auth/logout',
+            {'refresh_token': str(refresh)},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        refresh_response = self.client.post(
+            '/api/v1/auth/refresh',
+            {'refresh_token': str(refresh)},
+            format='json',
+        )
+
+        self.assertEqual(refresh_response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(refresh_response.data['error'], 'INVALID_REFRESH_TOKEN')
