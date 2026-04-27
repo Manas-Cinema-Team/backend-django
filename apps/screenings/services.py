@@ -34,11 +34,24 @@ def get_price_payload(session, seat_type: str | None = None):
     }
 
 
+def get_hall_layout(hall):
+    metadata = hall.schema_metadata if isinstance(hall.schema_metadata, dict) else {}
+    disabled_seat_set, disabled_payload = _extract_disabled_seats(metadata)
+    rows_payload = _normalize_rows(hall, metadata)
+
+    return {
+        'rows': rows_payload,
+        'disabled_seats': disabled_payload,
+        'disabled_seat_set': disabled_seat_set,
+    }
+
+
 def build_session_seat_map(session, user=None):
     hall = session.hall
-    metadata = hall.schema_metadata if isinstance(hall.schema_metadata, dict) else {}
-    disabled_seats, disabled_payload = _extract_disabled_seats(metadata)
-    rows_payload = _normalize_rows(hall, metadata)
+    layout = get_hall_layout(hall)
+    disabled_seats = layout['disabled_seat_set']
+    disabled_payload = layout['disabled_seats']
+    rows_payload = layout['rows']
     active_holds = _active_holds_by_seat(session)
     booked_seats = _booked_seats(session)
 

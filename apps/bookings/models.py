@@ -4,6 +4,8 @@ from django.conf import settings
 from django.db import models
 from django.db.models import Q
 
+from apps.pricing.models import TicketCurrency
+
 
 class SeatHoldStatus(models.TextChoices):
     HELD = 'held', 'Held'
@@ -37,6 +39,13 @@ class SeatHold(models.Model):
         on_delete=models.CASCADE,
         related_name='seat_holds',
     )
+    booking = models.ForeignKey(
+        'bookings.Booking',
+        on_delete=models.CASCADE,
+        related_name='seat_holds',
+        null=True,
+        blank=True,
+    )
     seat_row = models.PositiveSmallIntegerField()
     seat_number = models.PositiveSmallIntegerField()
     expires_at = models.DateTimeField(db_index=True)
@@ -53,6 +62,7 @@ class SeatHold(models.Model):
             models.Index(fields=['session', 'status'], name='bk_hold_session_status_idx'),
             models.Index(fields=['session', 'expires_at'], name='bk_hold_session_expires_idx'),
             models.Index(fields=['user', 'status'], name='bookings_hold_user_status_idx'),
+            models.Index(fields=['booking', 'status'], name='bk_hold_booking_status_idx'),
         ]
         constraints = [
             models.CheckConstraint(
@@ -91,6 +101,11 @@ class Booking(models.Model):
         related_name='bookings',
     )
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    currency = models.CharField(
+        max_length=3,
+        choices=TicketCurrency.choices,
+        default=TicketCurrency.KGS,
+    )
     booking_status = models.CharField(
         max_length=10,
         choices=BookingStatus.choices,
@@ -103,6 +118,7 @@ class Booking(models.Model):
         default=PaymentStatus.PENDING,
         db_index=True,
     )
+    expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
     confirmed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
@@ -112,6 +128,7 @@ class Booking(models.Model):
             models.Index(fields=['user', 'booking_status'], name='bookings_user_status_idx'),
             models.Index(fields=['session', 'booking_status'], name='bookings_session_status_idx'),
             models.Index(fields=['payment_status', 'created_at'], name='bookings_payment_created_idx'),
+            models.Index(fields=['booking_status', 'expires_at'], name='bookings_status_expires_idx'),
         ]
         constraints = [
             models.CheckConstraint(
