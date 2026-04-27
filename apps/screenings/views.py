@@ -5,6 +5,8 @@ from rest_framework.views import APIView
 from core.api import not_found_response, validation_error_response
 from core.pagination import DefaultPagination
 
+from apps.bookings.services import expire_stale_bookings_for_session
+
 from .querysets import content_session_queryset
 from .serializers import SeatMapSerializer, SessionContentSerializer, SessionListQuerySerializer
 from .services import build_session_seat_map
@@ -59,6 +61,9 @@ class SessionSeatMapView(APIView):
         session = content_session_queryset().filter(pk=pk).first()
         if session is None:
             return not_found_response('Сеанс не найден')
+
+        expire_stale_bookings_for_session(session.id)
+        session = content_session_queryset().filter(pk=pk).first()
 
         payload = build_session_seat_map(session, user=request.user)
         serializer = SeatMapSerializer(payload)
