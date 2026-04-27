@@ -5,9 +5,10 @@ from rest_framework.views import APIView
 from core.api import not_found_response, validation_error_response
 from core.pagination import DefaultPagination
 
+from apps.bookings.seat_status import build_session_seat_map, cleanup_expired_session_holds
+
 from .querysets import content_session_queryset
 from .serializers import SeatMapSerializer, SessionContentSerializer, SessionListQuerySerializer
-from .services import build_session_seat_map
 
 
 class SessionListView(APIView):
@@ -59,6 +60,9 @@ class SessionSeatMapView(APIView):
         session = content_session_queryset().filter(pk=pk).first()
         if session is None:
             return not_found_response('Сеанс не найден')
+
+        cleanup_expired_session_holds(session.id)
+        session = content_session_queryset().filter(pk=pk).first()
 
         payload = build_session_seat_map(session, user=request.user)
         serializer = SeatMapSerializer(payload)

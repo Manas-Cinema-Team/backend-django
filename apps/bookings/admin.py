@@ -16,8 +16,10 @@ class BookingAdmin(admin.ModelAdmin):
         'session',
         'user',
         'total_amount',
+        'currency',
         'booking_status',
         'payment_status',
+        'expires_at',
         'created_at',
         'seat_count',
     )
@@ -25,7 +27,7 @@ class BookingAdmin(admin.ModelAdmin):
     search_fields = ('user__email', 'session__movie__title', 'session__hall__name')
     autocomplete_fields = ('session', 'user')
     list_select_related = ('session', 'session__movie', 'session__hall', 'user')
-    readonly_fields = ('created_at', 'confirmed_at')
+    readonly_fields = ('created_at', 'confirmed_at', 'expires_at')
     ordering = ('-created_at',)
     date_hierarchy = 'created_at'
     inlines = [BookingSeatInline]
