@@ -24,4 +24,5 @@ urlpatterns = [
     path('api/v1/auth/', include('apps.users.urls')),
     path('api/v1/movies/', include('apps.movies.urls')),
     path('api/v1/sessions/', include('apps.screenings.urls')),
+    path('api/v1/bookings/', include('apps.bookings.urls')),
 ]
