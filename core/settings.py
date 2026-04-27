@@ -233,6 +233,9 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,
 }
 
+BOOKING_HOLD_MINUTES = env_int('BOOKING_HOLD_MINUTES', 10)
+SEAT_POLLING_INTERVAL_SECONDS = env_int('SEAT_POLLING_INTERVAL_SECONDS', 5)
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -268,6 +271,11 @@ LOGGING = {
         'project': {
             'handlers': ['console'],
             'level': env('DJANGO_PROJECT_LOG_LEVEL', LOG_LEVEL),
+            'propagate': False,
+        },
+        'bookings': {
+            'handlers': ['console'],
+            'level': env('DJANGO_BOOKINGS_LOG_LEVEL', LOG_LEVEL),
             'propagate': False,
         },
     },

@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.utils import timezone
@@ -232,6 +233,41 @@ class BookingWorkflowApiTests(APITestCase):
         self.assertEqual(response.data['error'], 'SEAT_HELD')
         self.assertEqual(response.data['details'], {'seats': [{'row': 1, 'number': 2}]})
 
+    def test_create_booking_rejects_disabled_seat(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            '/api/v1/bookings/',
+            {
+                'session_id': self.session.id,
+                'seats': [{'row': 2, 'number': 4}],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['error'], 'VALIDATION_ERROR')
+        self.assertEqual(response.data['details'], {'seats': [{'row': 2, 'number': 4}]})
+
+    def test_create_booking_rejects_duplicate_seats_in_payload(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            '/api/v1/bookings/',
+            {
+                'session_id': self.session.id,
+                'seats': [
+                    {'row': 1, 'number': 1},
+                    {'row': 1, 'number': 1},
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['error'], 'VALIDATION_ERROR')
+        self.assertIn('seats', response.data['details'])
+
     def test_get_booking_returns_current_state_for_owner(self):
         booking = self._create_draft_booking(user=self.user, seats=[(1, 1), (1, 2)])
         self.client.force_authenticate(user=self.user)
@@ -376,6 +412,25 @@ class BookingWorkflowApiTests(APITestCase):
             list(booking.seat_holds.values_list('status', flat=True)),
             [SeatHoldStatus.EXPIRED],
         )
+
+    @override_settings(BOOKING_HOLD_MINUTES=3)
+    def test_create_booking_uses_configured_hold_duration(self):
+        self.client.force_authenticate(user=self.user)
+        before_request = timezone.now()
+
+        response = self.client.post(
+            '/api/v1/bookings/',
+            {
+                'session_id': self.session.id,
+                'seats': [{'row': 1, 'number': 1}],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        booking = Booking.objects.get(pk=response.data['id'])
+        expected_expires_at = before_request + timedelta(minutes=3)
+        self.assertLess(abs((booking.expires_at - expected_expires_at).total_seconds()), 5)
 
     def _create_draft_booking(self, *, user, seats, expires_at=None):
         expires_at = expires_at or (timezone.now() + timedelta(minutes=10))
