@@ -1,7 +1,9 @@
 from rest_framework import serializers
 
+from apps.bookings.seat_status import build_session_seat_map, count_available_session_seats
+
 from .models import MovieSession
-from .services import build_session_seat_map, get_price_payload
+from .services import get_price_payload
 
 
 class SessionListQuerySerializer(serializers.Serializer):
@@ -85,7 +87,7 @@ class SessionContentSerializer(serializers.ModelSerializer):
         return PriceSerializer(payload).data
 
     def get_available_seats(self, obj):
-        return build_session_seat_map(obj)['available_seats']
+        return count_available_session_seats(obj)
 
 
 class SeatSerializer(serializers.Serializer):
@@ -109,3 +111,4 @@ class SeatMapSerializer(serializers.Serializer):
     schema = SeatSchemaSerializer()
     seats = SeatSerializer(many=True)
     polling_interval = serializers.IntegerField()
+    server_time = serializers.DateTimeField()

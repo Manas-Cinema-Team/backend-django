@@ -188,6 +188,7 @@ class SessionApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['hall_id'], self.hall.id)
         self.assertEqual(response.data['polling_interval'], 5)
+        self.assertIsNotNone(response.data['server_time'])
 
         seats = {(seat['row'], seat['number']): seat for seat in response.data['seats']}
         self.assertEqual(seats[(1, 1)]['status'], 'available')
