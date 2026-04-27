@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
+from django.test import override_settings
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework import status
@@ -200,3 +201,10 @@ class SessionApiTests(APITestCase):
         self.assertEqual(seats[(1, 4)]['status'], 'disabled')
         self.assertEqual(seats[(1, 3)]['price']['amount'], 450.0)
         self.assertEqual(seats[(1, 3)]['price']['currency'], 'KGS')
+
+    @override_settings(SEAT_POLLING_INTERVAL_SECONDS=9)
+    def test_session_seats_uses_configured_polling_interval(self):
+        response = self.client.get(f'/api/v1/sessions/{self.session.id}/seats/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['polling_interval'], 9)
