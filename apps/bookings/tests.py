@@ -175,6 +175,7 @@ class BookingWorkflowApiTests(APITestCase):
         self.assertEqual(response.data['currency'], 'KGS')
         self.assertEqual(response.data['total_amount'], 900.0)
         self.assertIsNotNone(response.data['expires_at'])
+        self.assertIsNotNone(response.data['server_time'])
         self.assertEqual(
             response.data['seats'],
             [
@@ -240,6 +241,7 @@ class BookingWorkflowApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['id'], booking.id)
         self.assertEqual(response.data['booking_status'], 'draft')
+        self.assertIsNotNone(response.data['server_time'])
         self.assertEqual(
             response.data['seats'],
             [
@@ -258,6 +260,7 @@ class BookingWorkflowApiTests(APITestCase):
         self.assertEqual(response.data['booking_status'], 'confirmed')
         self.assertEqual(response.data['payment_status'], 'paid')
         self.assertIsNotNone(response.data['confirmed_at'])
+        self.assertIsNotNone(response.data['server_time'])
 
         booking.refresh_from_db()
         self.assertEqual(booking.booking_status, BookingStatus.CONFIRMED)
@@ -360,6 +363,7 @@ class BookingWorkflowApiTests(APITestCase):
         response = self.client.get(f'/api/v1/sessions/{self.session.id}/seats/')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data['server_time'])
         seats = {
             (seat['row'], seat['number']): seat
             for seat in response.data['seats']

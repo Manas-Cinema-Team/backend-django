@@ -10,6 +10,7 @@ from apps.screenings.models import MovieSession
 from apps.screenings.services import get_hall_layout, get_primary_price
 
 from .models import Booking, BookingSeat, BookingStatus, PaymentStatus, SeatHold, SeatHoldStatus
+from .seat_status import cleanup_expired_session_holds
 
 
 HOLD_DURATION = timedelta(minutes=10)
@@ -24,42 +25,6 @@ class BookingWorkflowError(Exception):
         self.details = details
 
 
-def expire_stale_bookings_for_session(session_id: int, now=None) -> list[int]:
-    now = now or timezone.now()
-    expired_booking_ids = list(
-        SeatHold.objects.filter(
-            session_id=session_id,
-            booking_id__isnull=False,
-            status=SeatHoldStatus.HELD,
-            expires_at__lte=now,
-        )
-        .values_list('booking_id', flat=True)
-        .distinct()
-    )
-
-    if expired_booking_ids:
-        Booking.objects.filter(
-            id__in=expired_booking_ids,
-            booking_status=BookingStatus.PENDING,
-        ).update(
-            booking_status=BookingStatus.EXPIRED,
-            payment_status=PaymentStatus.CANCELLED,
-        )
-        SeatHold.objects.filter(
-            booking_id__in=expired_booking_ids,
-            status=SeatHoldStatus.HELD,
-        ).update(status=SeatHoldStatus.EXPIRED)
-
-    SeatHold.objects.filter(
-        booking__isnull=True,
-        session_id=session_id,
-        status=SeatHoldStatus.HELD,
-        expires_at__lte=now,
-    ).update(status=SeatHoldStatus.EXPIRED)
-
-    return expired_booking_ids
-
-
 def get_booking_for_user(booking_id: int, user) -> Booking:
     booking = Booking.objects.filter(pk=booking_id).select_related('session').first()
     if booking is None:
@@ -67,7 +32,7 @@ def get_booking_for_user(booking_id: int, user) -> Booking:
     if booking.user_id != user.id:
         raise BookingWorkflowError('FORBIDDEN', 'Нет доступа к этой брони.', 403)
 
-    expire_stale_bookings_for_session(booking.session_id)
+    cleanup_expired_session_holds(booking.session_id)
     return _booking_response_queryset().get(pk=booking_id)
 
 
@@ -78,7 +43,7 @@ def create_booking_hold(*, user, session_id: int, seats: list[dict]) -> Booking:
     if session is None:
         raise BookingWorkflowError('NOT_FOUND', 'Сеанс не найден', 404)
 
-    expire_stale_bookings_for_session(session.id, now=now)
+    cleanup_expired_session_holds(session.id, now=now)
     seat_catalog, disabled_seats = _seat_catalog(session.hall)
     requested_seats = _normalize_seat_coordinates(seats)
 
@@ -156,7 +121,7 @@ def confirm_booking(*, booking_id: int, user) -> Booking:
     with transaction.atomic():
         booking = _lock_booking_for_user(booking_id, user)
         now = timezone.now()
-        expire_stale_bookings_for_session(booking.session_id, now=now)
+        cleanup_expired_session_holds(booking.session_id, now=now)
         booking = _booking_response_queryset().get(pk=booking.id)
         result_booking_id = booking.id
 
@@ -215,7 +180,7 @@ def confirm_booking(*, booking_id: int, user) -> Booking:
 def cancel_booking(*, booking_id: int, user) -> None:
     booking = _lock_booking_for_user(booking_id, user)
     now = timezone.now()
-    expire_stale_bookings_for_session(booking.session_id, now=now)
+    cleanup_expired_session_holds(booking.session_id, now=now)
     booking.refresh_from_db()
 
     if booking.booking_status in {BookingStatus.CANCELLED, BookingStatus.EXPIRED}:

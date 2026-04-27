@@ -1,3 +1,4 @@
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -18,6 +19,14 @@ def booking_workflow_error_response(exc: BookingWorkflowError) -> Response:
     )
 
 
+def serialize_booking_response(booking, *, status_code=status.HTTP_200_OK) -> Response:
+    serializer = BookingResponseSerializer(
+        booking,
+        context={'server_time': timezone.now()},
+    )
+    return Response(serializer.data, status=status_code)
+
+
 class BookingCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -35,7 +44,7 @@ class BookingCreateView(APIView):
         except BookingWorkflowError as exc:
             return booking_workflow_error_response(exc)
 
-        return Response(BookingResponseSerializer(booking).data, status=status.HTTP_201_CREATED)
+        return serialize_booking_response(booking, status_code=status.HTTP_201_CREATED)
 
 
 class BookingDetailView(APIView):
@@ -47,7 +56,7 @@ class BookingDetailView(APIView):
         except BookingWorkflowError as exc:
             return booking_workflow_error_response(exc)
 
-        return Response(BookingResponseSerializer(booking).data)
+        return serialize_booking_response(booking)
 
     def delete(self, request, pk: int):
         try:
@@ -71,4 +80,4 @@ class BookingConfirmView(APIView):
         except BookingWorkflowError as exc:
             return booking_workflow_error_response(exc)
 
-        return Response(BookingResponseSerializer(booking).data, status=status.HTTP_200_OK)
+        return serialize_booking_response(booking, status_code=status.HTTP_200_OK)

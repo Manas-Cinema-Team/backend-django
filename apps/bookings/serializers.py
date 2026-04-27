@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.utils import timezone
 from rest_framework import serializers
 
 from apps.screenings.services import get_hall_layout
@@ -76,6 +77,7 @@ class BookingResponseSerializer(serializers.ModelSerializer):
     currency = serializers.SerializerMethodField()
     booking_status = serializers.SerializerMethodField()
     expires_at = serializers.SerializerMethodField()
+    server_time = serializers.SerializerMethodField()
     total_amount = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
     confirmed_at = serializers.DateTimeField(allow_null=True)
 
@@ -90,6 +92,7 @@ class BookingResponseSerializer(serializers.ModelSerializer):
             'booking_status',
             'payment_status',
             'expires_at',
+            'server_time',
             'confirmed_at',
             'created_at',
         )
@@ -159,6 +162,9 @@ class BookingResponseSerializer(serializers.ModelSerializer):
 
         hold = next(iter(obj.seat_holds.all()), None)
         return hold.expires_at if hold is not None else None
+
+    def get_server_time(self, obj):
+        return self.context.get('server_time') or timezone.now()
 
 
 def _seat_type_map(hall):
