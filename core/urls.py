@@ -22,4 +22,6 @@ from . import admin as core_admin
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/v1/auth/', include('apps.users.urls')),
+    path('api/v1/movies/', include('apps.movies.urls')),
+    path('api/v1/sessions/', include('apps.screenings.urls')),
 ]
