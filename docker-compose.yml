@@ -1,0 +1,57 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cinema_db}
+      POSTGRES_USER: ${POSTGRES_USER:-cinema_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cinema_pass}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cinema_user} -d ${POSTGRES_DB:-cinema_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0}
+      DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:-http://localhost:8000,http://127.0.0.1:8000}
+      DJANGO_CORS_ALLOWED_ORIGINS: ${DJANGO_CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      DJANGO_CORS_ALLOW_CREDENTIALS: ${DJANGO_CORS_ALLOW_CREDENTIALS:-True}
+      DJANGO_TIME_ZONE: ${DJANGO_TIME_ZONE:-UTC}
+      DJANGO_SECURE_SSL_REDIRECT: ${DJANGO_SECURE_SSL_REDIRECT:-False}
+      DJANGO_LOG_LEVEL: ${DJANGO_LOG_LEVEL:-INFO}
+      DJANGO_FRAMEWORK_LOG_LEVEL: ${DJANGO_FRAMEWORK_LOG_LEVEL:-INFO}
+      DJANGO_SERVER_LOG_LEVEL: ${DJANGO_SERVER_LOG_LEVEL:-INFO}
+      DJANGO_PROJECT_LOG_LEVEL: ${DJANGO_PROJECT_LOG_LEVEL:-INFO}
+      DJANGO_BOOKINGS_LOG_LEVEL: ${DJANGO_BOOKINGS_LOG_LEVEL:-INFO}
+      DB_ENGINE: ${DB_ENGINE:-django.db.backends.postgresql}
+      DB_NAME: ${DB_NAME:-cinema_db}
+      DB_USER: ${DB_USER:-cinema_user}
+      DB_PASSWORD: ${DB_PASSWORD:-cinema_pass}
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_CONN_MAX_AGE: ${DB_CONN_MAX_AGE:-60}
+      DB_CONNECT_TIMEOUT: ${DB_CONNECT_TIMEOUT:-10}
+      JWT_ACCESS_TOKEN_LIFETIME_MINUTES: ${JWT_ACCESS_TOKEN_LIFETIME_MINUTES:-15}
+      JWT_REFRESH_TOKEN_LIFETIME_DAYS: ${JWT_REFRESH_TOKEN_LIFETIME_DAYS:-7}
+      BOOKING_HOLD_MINUTES: ${BOOKING_HOLD_MINUTES:-10}
+      SEAT_POLLING_INTERVAL_SECONDS: ${SEAT_POLLING_INTERVAL_SECONDS:-5}
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+
+volumes:
+  postgres_data:

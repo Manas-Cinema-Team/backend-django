@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -13,7 +15,7 @@ from .models import Booking, BookingSeat, BookingStatus, PaymentStatus, SeatHold
 from .seat_status import cleanup_expired_session_holds
 
 
-HOLD_DURATION = timedelta(minutes=10)
+logger = logging.getLogger('bookings')
 
 
 class BookingWorkflowError(Exception):
@@ -49,6 +51,13 @@ def create_booking_hold(*, user, session_id: int, seats: list[dict]) -> Booking:
 
     invalid_seats = [seat for seat in requested_seats if (seat['row'], seat['number']) not in seat_catalog]
     if invalid_seats:
+        logger.warning(
+            'booking_hold_invalid_seats session_id=%s user_id=%s seats=%s invalid_seats=%s',
+            session_id,
+            user.id,
+            requested_seats,
+            invalid_seats,
+        )
         raise BookingWorkflowError(
             'VALIDATION_ERROR',
             'Некорректные места в запросе.',
@@ -60,6 +69,13 @@ def create_booking_hold(*, user, session_id: int, seats: list[dict]) -> Booking:
         seat for seat in requested_seats if (seat['row'], seat['number']) in disabled_seats
     ]
     if disabled_conflicts:
+        logger.warning(
+            'booking_hold_disabled_seats session_id=%s user_id=%s seats=%s disabled_seats=%s',
+            session_id,
+            user.id,
+            requested_seats,
+            disabled_conflicts,
+        )
         raise BookingWorkflowError(
             'VALIDATION_ERROR',
             'Нельзя бронировать недоступные места.',
@@ -69,6 +85,13 @@ def create_booking_hold(*, user, session_id: int, seats: list[dict]) -> Booking:
 
     conflicting_seats = _conflicting_seats(session.id, requested_seats)
     if conflicting_seats:
+        logger.warning(
+            'booking_hold_conflict session_id=%s user_id=%s seats=%s conflicting_seats=%s',
+            session_id,
+            user.id,
+            requested_seats,
+            conflicting_seats,
+        )
         raise BookingWorkflowError(
             'SEAT_HELD',
             'Одно или несколько мест уже заняты.',
@@ -78,6 +101,12 @@ def create_booking_hold(*, user, session_id: int, seats: list[dict]) -> Booking:
 
     price = get_primary_price(session)
     if price is None:
+        logger.warning(
+            'booking_hold_missing_price session_id=%s user_id=%s seats=%s',
+            session_id,
+            user.id,
+            requested_seats,
+        )
         raise BookingWorkflowError(
             'VALIDATION_ERROR',
             'Для сеанса не настроена цена.',
@@ -85,7 +114,7 @@ def create_booking_hold(*, user, session_id: int, seats: list[dict]) -> Booking:
             {'session_id': ['Для сеанса не настроена цена.']},
         )
 
-    expires_at = now + HOLD_DURATION
+    expires_at = now + _hold_duration()
     total_amount = price.amount * Decimal(len(requested_seats))
     booking = Booking.objects.create(
         session=session,
@@ -109,6 +138,17 @@ def create_booking_hold(*, user, session_id: int, seats: list[dict]) -> Booking:
             )
             for seat in requested_seats
         ]
+    )
+
+    logger.info(
+        'booking_hold_created booking_id=%s session_id=%s user_id=%s seats=%s expires_at=%s total_amount=%s currency=%s',
+        booking.id,
+        session.id,
+        user.id,
+        requested_seats,
+        expires_at.isoformat(),
+        total_amount,
+        price.currency,
     )
 
     return _booking_response_queryset().get(pk=booking.id)
@@ -171,9 +211,26 @@ def confirm_booking(*, booking_id: int, user) -> Booking:
                     booking.save(update_fields=['booking_status', 'payment_status', 'confirmed_at'])
 
     if workflow_error is not None:
+        logger.warning(
+            'booking_confirm_failed booking_id=%s user_id=%s error=%s',
+            result_booking_id,
+            user.id,
+            workflow_error.error,
+        )
         raise workflow_error
 
-    return _booking_response_queryset().get(pk=result_booking_id)
+    confirmed_booking = _booking_response_queryset().get(pk=result_booking_id)
+    logger.info(
+        'booking_confirmed booking_id=%s session_id=%s user_id=%s seats=%s confirmed_at=%s total_amount=%s',
+        confirmed_booking.id,
+        confirmed_booking.session_id,
+        confirmed_booking.user_id,
+        _booking_seat_coordinates(confirmed_booking),
+        confirmed_booking.confirmed_at.isoformat() if confirmed_booking.confirmed_at else '',
+        confirmed_booking.total_amount,
+    )
+
+    return confirmed_booking
 
 
 @transaction.atomic
@@ -184,14 +241,30 @@ def cancel_booking(*, booking_id: int, user) -> None:
     booking.refresh_from_db()
 
     if booking.booking_status in {BookingStatus.CANCELLED, BookingStatus.EXPIRED}:
+        logger.info(
+            'booking_cancel_skipped booking_id=%s session_id=%s user_id=%s status=%s',
+            booking.id,
+            booking.session_id,
+            user.id,
+            booking.booking_status,
+        )
         return
 
+    previous_status = booking.booking_status
     booking.booking_status = BookingStatus.CANCELLED
     booking.payment_status = PaymentStatus.CANCELLED
     booking.save(update_fields=['booking_status', 'payment_status'])
     booking.seat_holds.filter(
         status__in=[SeatHoldStatus.HELD, SeatHoldStatus.BOOKED],
     ).update(status=SeatHoldStatus.CANCELLED)
+    logger.info(
+        'booking_cancelled booking_id=%s session_id=%s user_id=%s previous_status=%s seats=%s',
+        booking.id,
+        booking.session_id,
+        user.id,
+        previous_status,
+        _booking_hold_coordinates(booking),
+    )
 
 
 def _booking_response_queryset():
@@ -323,3 +396,19 @@ def _expire_booking(booking_id: int) -> None:
         booking_id=booking_id,
         status=SeatHoldStatus.HELD,
     ).update(status=SeatHoldStatus.EXPIRED)
+
+
+def _hold_duration() -> timedelta:
+    return timedelta(minutes=settings.BOOKING_HOLD_MINUTES)
+
+
+def _booking_seat_coordinates(booking: Booking) -> list[tuple[int, int]]:
+    return list(
+        booking.seats.order_by('seat_row', 'seat_number').values_list('seat_row', 'seat_number')
+    )
+
+
+def _booking_hold_coordinates(booking: Booking) -> list[tuple[int, int]]:
+    return list(
+        booking.seat_holds.order_by('seat_row', 'seat_number').values_list('seat_row', 'seat_number')
+    )

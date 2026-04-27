@@ -1,3 +1,6 @@
+import logging
+
+from django.conf import settings
 from django.utils import timezone
 
 from .models import Booking, BookingStatus, PaymentStatus, SeatHold, SeatHoldStatus
@@ -5,7 +8,7 @@ from .models import Booking, BookingStatus, PaymentStatus, SeatHold, SeatHoldSta
 from apps.screenings.services import get_hall_layout, get_price_payload
 
 
-POLLING_INTERVAL_SECONDS = 5
+logger = logging.getLogger('bookings')
 
 
 def cleanup_expired_session_holds(session_id: int, now=None) -> list[int]:
@@ -33,13 +36,27 @@ def cleanup_expired_session_holds(session_id: int, now=None) -> list[int]:
             booking_id__in=expired_booking_ids,
             status=SeatHoldStatus.HELD,
         ).update(status=SeatHoldStatus.EXPIRED)
+        logger.info(
+            'booking_holds_expired session_id=%s booking_ids=%s expired_at=%s',
+            session_id,
+            expired_booking_ids,
+            now.isoformat(),
+        )
 
-    SeatHold.objects.filter(
+    orphan_expired_count = SeatHold.objects.filter(
         booking__isnull=True,
         session_id=session_id,
         status=SeatHoldStatus.HELD,
         expires_at__lte=now,
     ).update(status=SeatHoldStatus.EXPIRED)
+
+    if orphan_expired_count:
+        logger.info(
+            'seat_holds_expired_without_booking session_id=%s count=%s expired_at=%s',
+            session_id,
+            orphan_expired_count,
+            now.isoformat(),
+        )
 
     return expired_booking_ids
 
@@ -57,7 +74,7 @@ def build_session_seat_map(session, user=None, *, now=None):
         'hall_name': session.hall.name,
         'schema': snapshot['schema'],
         'seats': snapshot['seats'],
-        'polling_interval': POLLING_INTERVAL_SECONDS,
+        'polling_interval': settings.SEAT_POLLING_INTERVAL_SECONDS,
         'available_seats': snapshot['available_seats'],
         'server_time': snapshot['server_time'],
     }
@@ -68,6 +85,7 @@ def get_session_seat_status_snapshot(session, user=None, *, now=None):
     layout = get_hall_layout(session.hall)
     active_holds = _active_holds_by_seat(session, now=server_time)
     booked_seats = _booked_seats(session)
+    price_payload = get_price_payload(session)
     seats = []
     available_seats = 0
     user_id = getattr(user, 'id', None) if getattr(user, 'is_authenticated', False) else None
@@ -102,7 +120,7 @@ def get_session_seat_status_snapshot(session, user=None, *, now=None):
                     'status': status,
                     'held_by_me': held_by_me,
                     'expires_at': expires_at,
-                    'price': get_price_payload(session, seat_type=seat_type),
+                    'price': price_payload,
                 }
             )
 
